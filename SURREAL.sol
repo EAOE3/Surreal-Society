@@ -85,57 +85,72 @@ library Strings {
 
 }
 
-contract ERC721 is ERC165, IERC721, IERC721Metadata {
-    using Strings for uint256;
+abstract contract CFMS { //Crypto Family Management Standard
 
     address private _owner;
-
     mapping(address => bool) private _manager;
 
-    string private uriLink = "";
+    event OwnershipTransfer(address indexed newOwner);
+    event SetManager(address indexed manager, bool state);
+
+    constructor() {
+        _owner = msg.sender;
+        _manager[msg.sender] = true;
+
+        emit SetManager(msg.sender, true);
+    }
+
+    //Modifiers ==========================================================================================================================================
+    modifier Owner() {
+        require(msg.sender == _owner, "CFMS: NOT_OWNER");
+        _;  
+    }
+
+    modifier Manager() {
+      require(_manager[msg.sender], "CFMS: MOT_MANAGER");
+      _;  
+    }
+
+    //Read functions =====================================================================================================================================
+    function owner() public view returns (address) {
+        return _owner;
+    }
+
+    function manager(address user) external view returns(bool) {
+        return _manager[user];
+    }
+
     
-    uint256 private _totalSupply;
+    //Write functions ====================================================================================================================================
+    function setNewOwner(address user) external Owner {
+        _owner = user;
+        emit OwnershipTransfer(user);
+    }
+
+    function setManager(address user, bool state) external Owner {
+        _manager[user] = state;
+        emit SetManager(user, state);
+    }
+
+
+}
+
+abstract contract CF_ERC721 is CFMS, ERC165, IERC721, IERC721Metadata{ //Crypto Family ERC721 Standard
+    using Strings for uint256;
+
+    string internal uriLink = "";
+    
+    uint256 internal _totalSupply;
 
     string private _name = "Surreal Society";
     string private _symbol = "SURREAL";
 
-    mapping(uint256 => address) private _owners;
+    mapping(uint256 => address) internal _owners;
     mapping(address => uint256) private _balances;
     mapping(uint256 => address) private _tokenApprovals;
     mapping(address => mapping(address => bool)) private _operatorApprovals;
 
-    bool private _whiteMinting = false;//if minting is on or off
-    bool private _minting = false;//if minting is on or off
-
-    uint256 private _whitePrice = 100000000000000000;
-    uint256 private _publicPrice = 150000000000000000;
-
-    mapping(address => uint256) private _userWhiteMints; //How many times did the user mint in white lsit minting
-    mapping(address => uint256) private _userMints;
-
-    uint256 private _whiteMinted;
-
-    mapping(address => bool) private _whiteAccess;
-
-    modifier Manager() {
-      require(_manager[msg.sender]);
-      _;  
-    }
-
-    modifier Owner() {
-        require(msg.sender == _owner);
-      _;  
-    }
-
-    constructor () {
-        _owner = msg.sender;
-        _manager[msg.sender] = true;
-    } 
-    
     //Read Functions======================================================================================================================================================
-    function owner() external view returns (address) {
-        return _owner;
-    }
     
     function supportsInterface(bytes4 interfaceId) public view override(ERC165, IERC165) returns (bool) {
         return interfaceId == type(IERC721).interfaceId
@@ -148,7 +163,7 @@ contract ERC721 is ERC165, IERC721, IERC721Metadata {
         return _balances[owner];
     }
 
-    function ownerOf(uint256 tokenId) public view override returns (address) {
+    function ownerOf(uint256 tokenId) external view override returns (address) {
         address owner = _owners[tokenId];
         require(owner != address(0), "ERC721: owner query for nonexistent token");
         return owner;
@@ -164,8 +179,8 @@ contract ERC721 is ERC165, IERC721, IERC721Metadata {
     
     function totalSupply() public view override returns(uint256){return _totalSupply;}
 
-    function tokenURI(uint256 tokenId) external view override returns (string memory) {
-        return string(abi.encodePacked(uriLink, tokenId.toString(), ".json"));
+    function tokenURI(uint256 tokenId) external view virtual override returns (string memory) {
+        return string(abi.encodePacked(uriLink, "secret.json"));
 
     }
 
@@ -179,51 +194,7 @@ contract ERC721 is ERC165, IERC721, IERC721Metadata {
         return _operatorApprovals[owner][operator];
     }
     
-    function manager(address user) external view returns(bool) {
-        return _manager[user];
-    }
-
-    function prices() public view returns(uint256 whitePrice, uint256 publicPrice) {
-        whitePrice = _whitePrice;
-        publicPrice = _publicPrice;
-    }
-
-    function minting() public view returns(bool whiteMint, bool publicMint) {
-        whiteMint = _whiteMinting;
-        publicMint = _minting;
-    }
-    
     //Moderator Functions======================================================================================================================================================
-
-    function setNewOwner(address user) external Owner {
-        _owner = user;
-    }
-
-    function addManager(address user) external Owner {
-        _manager[user] = true;
-    }
-
-    function removeManager(address user) external Owner {
-        _manager[user] = false;
-    }
-
-    function setWhiteList(address[] calldata whiteUsers) external Owner {
-        uint256 size = whiteUsers.length;
-            
-            for(uint256 t; t < size; ++t) {
-                _whiteAccess[whiteUsers[t]] = true;
-            }
-    }
-
-    function adminMint(address to, uint256 amount) external Manager {
-        _mint(to, amount);
-    }
-
-    function adminMint(address[] calldata to, uint256[] calldata amount) external Manager {
-        uint256 size = to.length;
-
-        for(uint256 t; t < size; ++t) {_mint(to[t], amount[t]);}
-    }
 
     function changeURIlink(string calldata newUri) external Manager {
         uriLink = newUri;
@@ -234,50 +205,9 @@ contract ERC721 is ERC165, IERC721, IERC721Metadata {
         _symbol = symbol;
     }
 
-    function changePrices(uint256 whitePrice, uint256 publicPrice) external Manager {
-        _whitePrice = whitePrice;
-        _publicPrice = publicPrice;
-    }
-
-    function setMinting(bool whiteMinting, bool publicMinting) external Manager {
-        _whiteMinting = whiteMinting;
-        _minting = publicMinting;
-    }
-
-    function withdraw(address payable to, uint256 value) external Manager {
-        to.transfer(value);
-    }
-
-    function distribute() public Manager {
-        
-        uint256 balance = address(this).balance / 10000; // This is 0.01% of the total balance -> Needed to do presition calculations without floating point.
-        
-        require(payable(0x7A6c41c001d6Fbf4AE6022E936B24d0d39AE3a25).send(balance * 500));
-        require(payable(0x6Ec4EAA315aba37B7558A66c51D0dd4986128bCb).send(balance * 500));
-        require(payable(0x2954F886f9E118F4a680D4B65627ca6b6f6094B3).send(balance * 620));
-        require(payable(0x37B8C37EB031312c5DaaA02fD5baD9Dc380a8cc4).send(balance * 130));
-        require(payable(0xcc2ba3C4E74A531635b928D2aC5B3f176C8B6ec3).send(balance * 460));
-        require(payable(0xC970bd4E2dF5F33ea62c72b9c3d808b8a609e5e1).send(balance * 580));
-        require(payable(0x02916D0f68a02c502476DC630628B01Ee36A7826).send(balance * 60));
-        require(payable(0x2C1Ba2909A0dC98A6219079FBe9A4ab23517D47E).send(balance * 60));
-        require(payable(0x38cA9DAACB4d5e493132c2fE9507bbaee4AB86aC).send(balance * 60));
-        require(payable(0x50a583Ab2432BF3bC5E7458C8ed10BC5Ec3AB23E).send(balance * 620));
-        require(payable(0x58EE6F81AE4Ed77E8Dc50344Ab7571EA7A75a9b7).send(balance * 24));
-        require(payable(0x10f3667970FAd7dA441261c80727caCd8B164806).send(balance * 1000));
-        require(payable(0x9D7a3F970Bbc7aB9C8537dc9637051b824A9eD0C).send(balance * 100));
-        require(payable(0x41b6cb632F5707bF80a1c904316b19fcBee2a4cF).send(balance * 60));
-        require(payable(0x3b0f95D44f629e8E24a294799c4A1D21f06B6969).send(balance * 226));
-        require(payable(0x07b699C2B00c08cb017e93e45fab21EA3D5c6Bdc).send(balance * 60));
-        require(payable(0x81cc8A4bb62fF93f62EC94e3AA40A3A862c54368).send(balance * 4840));
-
-        require(payable(0x81cc8A4bb62fF93f62EC94e3AA40A3A862c54368).send(address(this).balance));
-    }
- 
-    
     //User Functions======================================================================================================================================================
     function approve(address to, uint256 tokenId) external override {
-        address owner = ERC721.ownerOf(tokenId);
-        require(to != owner, "ERC721: approval to current owner");
+        address owner = _owners[tokenId];
 
         require(msg.sender == owner || isApprovedForAll(owner, msg.sender),
             "ERC721: approve caller is not owner nor approved for all"
@@ -309,30 +239,6 @@ contract ERC721 is ERC165, IERC721, IERC721Metadata {
         _safeTransfer(from, to, tokenId, _data);
     }
 
-    function whiteMint(uint256 amount) external payable {
-        require(++_userWhiteMints[msg.sender] < 4, "SURREAL: Minting Limit Reached");
-        require(amount < 6, "SURREAL: Max of 5 Mints Per Transaction");
-
-        require(_whiteMinting, "SURREAL: Minting Has Not Started Yet"); 
-        require(_whiteAccess[msg.sender], "SURREAL: Invalid Access"); 
-        require(msg.value == _whitePrice * amount, "SURREAL: Wrong ETH Value");
-        _whiteMinted += amount;
-        require(_whiteMinted < 2000,"SURREAL: Insufficient White Mint Tokens");
-
-        _mint(msg.sender, amount);
-    }
-
-    function mint(uint256 amount) external payable {
-        require(++_userMints[msg.sender] < 4, "SURREAL: Minting Limit Reached");
-        require(amount < 6, "SURREAL: Max of 5 Mints Per Transaction");
-        
-        require(_minting, "SURREAL: Minting Has Not Started Yet"); 
-        require(_totalSupply + amount < 5000, "SURREAL: Insufficient Tokens");
-        require(msg.value == _publicPrice * amount, "SURREAL: Wrong ETH Value");
-
-        _mint(msg.sender, amount);
-    }
-    
     //Internal Functions======================================================================================================================================================
     function _safeTransfer(address from, address to, uint256 tokenId, bytes memory _data) internal {
         _transfer(from, to, tokenId);
@@ -365,7 +271,7 @@ contract ERC721 is ERC165, IERC721, IERC721Metadata {
 
     function _approve(address to, uint256 tokenId) internal {
         _tokenApprovals[tokenId] = to;
-        emit Approval(ERC721.ownerOf(tokenId), to, tokenId);
+        emit Approval(_owners[tokenId], to, tokenId);
     }
 
     function _mint(address user, uint256 amount) internal {
@@ -380,6 +286,132 @@ contract ERC721 is ERC165, IERC721, IERC721Metadata {
             emit Transfer(address(0), user, tokenId);
         }
         
+    }
+}
+
+contract SURREAL is CF_ERC721 {
+    
+    using Strings for uint256;
+
+    bool private _reveal = false;
+
+    uint256 private _whitePrice = 100000000000000000;
+    uint256 private _publicPrice = 150000000000000000;
+
+    mapping(address => uint256) private _userWhiteMints; //How many times did the user mint in white lsit minting
+
+    uint256 private _whiteMinted;
+
+    mapping(address => bool) private _whiteAccess;
+    
+    constructor() {
+        _mint(0x81cc8A4bb62fF93f62EC94e3AA40A3A862c54368, 10);
+    }
+
+    //Read Functions======================================================================================================================================================
+
+    function tokenURI(uint256 tokenId) external view override returns (string memory) {
+        if(!_reveal) {return string(abi.encodePacked(uriLink, "secret.json"));}
+        
+        ++tokenId;
+        return string(abi.encodePacked(uriLink, tokenId.toString(), ".json"));
+
+    }
+
+    function prices() public view returns(uint256 whitePrice, uint256 publicPrice) {
+        whitePrice = _whitePrice;
+        publicPrice = _publicPrice;
+    }
+
+    function whiteListed(address user) external view returns(bool listed) {
+        return _whiteAccess[user];
+    } 
+
+    function userWhiteMints(address user) external view returns(uint256 mints) {
+        return _userWhiteMints[user];
+    }
+
+    function whiteMinted() public view returns(uint256 data) { return _whiteMinted; }
+    
+    //Moderator Functions======================================================================================================================================================
+
+    function setWhiteList(address[] calldata whiteUsers) external Owner {
+        uint256 size = whiteUsers.length;
+            
+            for(uint256 t; t < size; ++t) {
+                _whiteAccess[whiteUsers[t]] = true;
+            }
+    }
+
+    function adminMint(address to, uint256 amount) external Manager {
+        _mint(to, amount);
+    }
+
+    function adminMint(address[] calldata to, uint256[] calldata amount) external Manager {
+        uint256 size = to.length;
+
+        for(uint256 t; t < size; ++t) {
+            _mint(to[t], amount[t]);
+        }
+    }
+
+    function changePrices(uint256 whitePrice, uint256 publicPrice) external Manager {
+        _whitePrice = whitePrice;
+        _publicPrice = publicPrice;
+    }
+
+    function toggleReveal() external Manager {
+        _reveal = !_reveal;
+    }
+
+    function withdraw(address payable to, uint256 value) external Manager {
+        to.transfer(value);
+    }
+
+    function distribute() public Manager {
+        
+        uint256 balance = address(this).balance / 10000; // This is 0.01% of the total balance -> Needed to do presition calculations without floating point.
+        
+        require(payable(0x81cc8A4bb62fF93f62EC94e3AA40A3A862c54368).send(balance * 5000));
+        require(payable(0x10f3667970FAd7dA441261c80727caCd8B164806).send(balance * 900));
+        require(payable(0x7A6c41c001d6Fbf4AE6022E936B24d0d39AE3a25).send(balance * 325));
+        require(payable(0x6Ec4EAA315aba37B7558A66c51D0dd4986128bCb).send(balance * 325));
+        require(payable(0xcc2ba3C4E74A531635b928D2aC5B3f176C8B6ec3).send(balance * 216));
+        require(payable(0x37B8C37EB031312c5DaaA02fD5baD9Dc380a8cc4).send(balance * 125));
+        require(payable(0xC970bd4E2dF5F33ea62c72b9c3d808b8a609e5e1).send(balance * 550));
+        require(payable(0xED7AdfDBbcB1b5C93fa8B6b28B0Fc833Fa68BCA0).send(balance * 580));
+        require(payable(0x50a583Ab2432BF3bC5E7458C8ed10BC5Ec3AB23E).send(balance * 580));
+        require(payable(0x3b0f95D44f629e8E24a294799c4A1D21f06B6969).send(balance * 225));
+        require(payable(0x02916D0f68a02c502476DC630628B01Ee36A7826).send(balance * 50));
+        require(payable(0x41b6cb632F5707bF80a1c904316b19fcBee2a4cF).send(balance * 50));
+        require(payable(0x2C1Ba2909A0dC98A6219079FBe9A4ab23517D47E).send(balance * 50));
+        require(payable(0x58EE6F81AE4Ed77E8Dc50344Ab7571EA7A75a9b7).send(balance * 24));
+
+        require(payable(0x3AA599FB8003B94666c9D66Db43D859ef5EEa29f).send(address(this).balance));
+    }
+    
+    //User Functions======================================================================================================================================================
+
+    function whiteMint() external payable {
+        require(_whiteAccess[msg.sender], "SURREAL: Invalid Access"); 
+
+        uint256 amount = msg.value / _whitePrice;
+
+        _userWhiteMints[msg.sender] += amount;
+        require(_userWhiteMints[msg.sender] < 11, "SURREAL: Minting Limit Reached");
+
+        _whiteMinted += amount;
+        require(_whiteMinted < 1500,"SURREAL: Insufficient White Mint Tokens");
+
+        _mint(msg.sender, amount);
+    }
+
+    function mint() external payable {
+        uint256 amount = msg.value / _publicPrice;
+
+        require(_totalSupply + amount < 5000, "SURREAL: Insufficient Tokens");
+
+        _mint(msg.sender, amount);
     }
 
 }
